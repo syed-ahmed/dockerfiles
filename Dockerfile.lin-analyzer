@@ -1,0 +1,68 @@
+FROM ubuntu:14.04
+
+ARG PYTHON_VERSION=2.7
+ARG INSTALL_PREFIX=/workspace/install
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+         ca-certificates wget \
+         gnupg2 \
+         build-essential \
+         cmake \
+         git \
+         curl \
+         ca-certificates \
+         libjpeg-dev \
+         libedit-dev \
+         subversion swig \
+         libncurses5-dev \
+         zlib1g-dev \
+         vim \
+         libpng-dev && \
+     rm -rf /var/lib/apt/lists/*
+
+RUN curl -o ~/miniconda.sh -O  https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh  && \
+     chmod +x ~/miniconda.sh && \
+     ~/miniconda.sh -b -p /opt/conda && \
+     rm ~/miniconda.sh && \
+     /opt/conda/bin/conda install -y python=$PYTHON_VERSION numpy pyyaml scipy ipython ninja cython typing && \
+     /opt/conda/bin/conda clean -ya
+ENV PATH /opt/conda/bin:$PATH
+
+RUN apt-get update && apt-get install -y --no-install-recommends ninja-build
+
+WORKDIR /workspace
+RUN chmod -R a+w .
+
+RUN  wget http://llvm.org/releases/3.5.0/llvm-3.5.0.src.tar.xz && \
+     wget http://llvm.org/releases/3.5.0/cfe-3.5.0.src.tar.xz && \
+     tar -xvf llvm-3.5.0.src.tar.xz && \
+     mv llvm-3.5.0.src llvm && \
+     tar -xvf cfe-3.5.0.src.tar.xz && \
+     mv cfe-3.5.0.src clang && \
+     cp -r clang llvm/tools && \
+     rm llvm-3.5.0.src.tar.xz && \
+     rm cfe-3.5.0.src.tar.xz
+
+RUN  git clone https://github.com/zhguanw/lin-analyzer.git /workspace/llvm/tools/lin-analyzer/ && \
+     sed -i -e '1iadd_llvm_tool_subdirectory(lin-analyzer)\' /workspace/llvm/tools/CMakeLists.txt
+
+RUN  wget http://sourceforge.net/projects/boost/files/boost/1.57.0/boost_1_57_0.tar.gz && \
+     tar -xvf boost_1_57_0.tar.gz && \
+     rm boost_1_57_0.tar.gz
+
+RUN  cd llvm && mkdir Release && cd Release && \
+     cmake .. \
+          -G Ninja -DLLVM_ENABLE_RTTI=ON -DCMAKE_INSTALL_PREFIX=$INSTALL_PREFIX/llvm \
+          -DBOOST_INCLUDE_DIR=/workspace/boost_1_57_0 \
+          -DZLIB_INCLUDE_DIRS=/usr/include \
+          -DZLIB_LIBRARY=/usr/lib/x86_64-linux-gnu/libz.so && \
+     ninja install
+
+ENV  BOOST_ROOT=/workspace/boost_1_57_0 \
+     LD_LIBRARY_PATH=/workspace/install/llvm/bin/lib \
+     LLVM_BIN_HOME=/workspace/install/llvm/bin \
+     LLVM_SRC=/workspace/llvm \
+     TESTBENCH_HOME=/workspace/llvm/tools/lin-analyzer/testsuite/Ecobench \
+     PATH="/workspace/install/llvm/bin:${PATH}"
+
+RUN  pip install matplotlib
